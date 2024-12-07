@@ -117,9 +117,17 @@ def _upper_convex_hull(S):
 
 def count_transitions(points, P, N):
     transitions = 0
-    points = np.array(list(points)) #sorted(UCH_det, key=lambda x: x[0])  # Sort points by x-coordinate
+    points = np.array(list(points)) # sorted(UCH_det, key=lambda x: x[0])  # Sort points by x-coordinate
     points = points[np.lexsort((points[:, 1], points[:, 0]))]
     for i in range(1, len(points)):
+        #if tuple(points[i]) in P[0] and tuple(points[i]) in N[0]:
+        #    print("P/N")
+        #elif tuple(points[i]) in P[0]:
+        #    print("P")
+        #elif tuple(points[i]) in N[0]:
+        #    print("N")
+        #else:
+        #    print("Unknown")
         if (tuple(points[i-1]) in P[0] and tuple(points[i]) in N[0]) or (tuple(points[i-1]) in N[0] and tuple(points[i]) in P[0]):
             transitions += 1
 
@@ -171,5 +179,17 @@ def plot_sawtooths(l):
         #print("\n\n")
     plt.plot(xs, ys)
     plt.show()
+
+
+def generate_points_on_upper_hemisphere(num_points):
+    angles = np.linspace(0, np.pi, num_points, endpoint=False)
+    x = np.cos(angles)
+    y = np.sin(angles)
+    points = np.vstack((x, y)).T
+
+    P = [{tuple(p) for p in points[0::2]}]
+    N = [{tuple(n) for n in points[1::2]}]
+
+    return P, N
 
 
