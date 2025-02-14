@@ -53,6 +53,7 @@ class Layer:
         if random:
             self.W = np.random.randn(output_dim, input_dim)
             self.b = np.random.randn(output_dim)
+            # self.b = np.array([0.])
             if lin:
                 self.t = -np.inf
             else:
@@ -290,7 +291,7 @@ class RandNN:
         self.N = N
         self.W = W
 
-        self.layers = [Layer(input_dim=input_dim, output_dim=output_dim, lin=True, random=True) for _ in range(L)]
+        self.layers = [Layer(input_dim=input_dim, output_dim=output_dim, lin=False, random=True) for _ in range(L)]
 
 
     def __call__(self, all_layers=False):

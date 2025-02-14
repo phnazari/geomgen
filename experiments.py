@@ -1,8 +1,9 @@
 import numpy as np
 from matplotlib import pyplot as plt
+from matplotlib.patches import Arc
 
 from util import count_transitions, generate_points_on_upper_hemisphere, plot_function, plot_grid, plot_points, upper_convex_hull
-from tropical import iterate_points, setsum
+from tropical import add_bias, iterate_points, setmult, setsum
 from nn import RandNN, SawtoothNetwork
 import os
 
@@ -135,20 +136,92 @@ def half_circle(R, plot=False, size=10, L=1):
         plt.show()
 
 
+def test(num_points=5):
+    P, N = generate_points_on_upper_hemisphere(num_points)
+
+    S = setsum(P[0], N[0])
+    uch = upper_convex_hull([S])[0]
+    print(len(uch))
+
+    W = - np.abs(np.random.randn(1)[0])
+    b = np.random.randn(1)[0]
+
+    n = num_points
+
+    W = 1
+    b = 0.8  # lower_bound(num_points, n)   # upper_bound(num_points, n)
+
+    print(upper_bound(num_points, n))
+    print(lower_bound(num_points, n))
+
+    # multiply N by W
+    N = setmult(W, N[0])
+    # M = add_bias(setmult(W, P[0]), b)
+    M = add_bias(N, b)
+    O = setmult(W, P[0])
+
+    A = setsum(N, N)
+    B = setsum(M, O)
+    # B = setsum(add_bias(setmult(W, P[0]), b), N)
+    C = A.union(B)
+
+    fig = plt.figure()
+    plt.scatter(*zip(*A), alpha=.4, label='A', color='r')
+    plt.scatter(*zip(*B), alpha=.4, label='B', color='g')    
+
+    for n in N:
+        plt.gca().add_patch(Arc(n, 2*W, 2*W, theta1=0, theta2=90, color='r'))
+
+    for m in M:
+        plt.gca().add_patch(Arc(m, 2*W, 2*W, theta1=0, theta2=90, color='g'))
+
+    # plot a circle with radius 2W
+    # plt.gca().add_patch(Arc((0, b), 4*W, 4*W, theta1=0, theta2=90))
+    # plt.gca().add_patch(Arc((0, 0), 4*W, 4*W, theta1=0, theta2=90))
+
+    # plot upper convex hull using circles around points
+    uch = upper_convex_hull([C])[0]
+    plt.gca().scatter(*zip(*uch), alpha=.4, label='UCH', color='b')
+    print(len(uch))
+    plt.axis('equal')
+    plt.legend()
+    plt.show()
+
+
+def lower_bound(n, i):
+    norm = 2*(2*n+1)
+    pihalf = np.pi/2
+    Cn = 2*np.sin(pihalf*1/norm)**2
+    Dn = np.sin(pihalf*(4*i)/norm)
+    return Cn/Dn
+
+def upper_bound(n, i):
+    norm = 2*(2*n+1)
+    pihalf = np.pi/2
+    Cn = 2*np.sin(pihalf*1/norm)**2
+    Dn = np.sin(pihalf*(4*i+2)/norm)
+    return -Cn/Dn
+
+
 def half_circle_one_layer(R, plot=False, size=10):
     results_linregs = np.zeros(R)
 
     for r in range(R):
         print(f"iteration r={r}")
         P, N = generate_points_on_upper_hemisphere(size)
+
+        summed_points = setsum(P[0], N[0])
+
+        uch = upper_convex_hull([summed_points])[0]
+        print(f"Number of vertices in UCH: {len(uch)}")
+
+
         nn = RandNN(1, P=P, N=N)
         nn.evaluate(all_layers=False)
         results_linregs[r] = nn.linregs
-        for i, p in enumerate(nn.P[0]):
-            summed_points = setsum([p], nn.N[0])
-            plt.scatter(*zip(*summed_points), label=f'P[{i}] + N')
-        plt.axis('equal')
-        plt.show()
+
+        print(nn.layers[0].b)
+
         fig = plt.figure()
         plt.scatter(*zip(*nn.P[0]), alpha=.4, label='P')
         plt.scatter(*zip(*nn.N[0]), alpha=.4, label='N')
@@ -156,6 +229,18 @@ def half_circle_one_layer(R, plot=False, size=10):
         plt.legend()
         plt.show()
 
+        fig = plt.figure()
+        summed_points = setsum(nn.P[0], nn.N[0])
+        plt.scatter(*zip(*summed_points), alpha=.4, label='P + N')
+
+        uch = upper_convex_hull([summed_points])[0]
+        print(f"Number of vertices in UCH: {len(uch)}")
+
+        plt.scatter(*zip(*uch), alpha=.4, label='UCH')
+
+        plt.axis('equal')
+        plt.legend()
+        plt.show()
 
     P, N = generate_points_on_upper_hemisphere(size)
     nn_zero = RandNN(0, P=P, N=N)

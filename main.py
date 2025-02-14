@@ -1,4 +1,4 @@
-from experiments import det_rand_net, half_circle, rand_net, half_circle_one_layer, sawtooth_plots, sawtooth_histograms, sawtooth_one_layer, sawtooth, expected_good_edges
+from experiments import det_rand_net, half_circle, rand_net, half_circle_one_layer, sawtooth_plots, sawtooth_histograms, sawtooth_one_layer, sawtooth, expected_good_edges, test
 import numpy as np
 from matplotlib import pyplot as plt
 import math
@@ -11,7 +11,7 @@ from util import count_transitions, generate_points_on_upper_hemisphere, plot_fu
 # depth
 L = 7
 # repetitions
-R = 100
+R = 1
 plot = True
 
 if False:
@@ -34,7 +34,8 @@ if False:
 
 # half_circle(R, plot=plot, L=L, size=14)
 
-# half_circle_one_layer(R, plot=plot, size=15)
+test(5)
+# half_circle_one_layer(R, plot=plot, size=16)
 
 # det_rand_net_one_layer(R, plot)
 

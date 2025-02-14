@@ -11,6 +11,9 @@ def upper_convex_hull(S):
 
     return S_upper
 
+from scipy.spatial import ConvexHull
+
+
 def _upper_convex_hull(S):
     """Computes the convex hull of a set of 2D points.
 
@@ -22,53 +25,42 @@ def _upper_convex_hull(S):
 
     points = np.array(list(S))
 
-    if points.shape[0] > 2 and False:
-        from scipy.spatial import ConvexHull
-        hull = ConvexHull(points)
-
-        # Extract vertices adjacent to facets with normal vector pointing downwards
-        downward_facets = [i for i, eq in enumerate(hull.equations) if eq[1] < 0]
-        vertices = set()
-        for simplex in hull.simplices:
-            if any(facet in downward_facets for facet in simplex):
-                vertices.update(simplex)
-        
-        pointstest = points[list(vertices)]
-        print(pointstest)
-        
-
-    # Sort the points lexicographically (tuples are compared lexicographically).
-    # Remove duplicates to detect the case we have just one unique point.
-    points = np.unique(points, axis=0)
-    # print(points.shape)
-    points = points[np.lexsort((points[:, 1], points[:, 0]))]
-
-    # print(points)
-
-    # Boring case: no points or a single point, possibly repeated multiple times.
     if len(points) <= 1:
         return S
 
-    # 2D cross product of OA and OB vectors, i.e. z-component of their 3D cross product.
-    # Returns a positive value, if OAB makes a counter-clockwise turn,
-    # negative for clockwise turn, and zero if the points are collinear.
-    def cross(o, a, b):
-        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    hull = ConvexHull(points)
+    vertices = points[hull.vertices]
 
-    # Build upper hull
-    upper = []
-    for p in reversed(points):
-        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
-            upper.pop()
+    # we have to filter for the one with max y value because at the boundary there could be two on top of each other
+    minx = np.argmin(vertices[:, 0])
+    minx_candidates = np.where(vertices[:, 0] == vertices[minx, 0])[0]
+    if len(minx_candidates) > 1:
+        minx = minx_candidates[np.argmax(vertices[minx_candidates, 1])]
+    maxx = np.argmax(vertices[:, 0])
+    maxx_candidates = np.where(vertices[:, 0] == vertices[maxx, 0])[0]
+    if len(maxx_candidates) > 1:
+        maxx = maxx_candidates[np.argmax(vertices[maxx_candidates, 1])]
 
-        if len(upper) < 2 or (len(upper) >= 2 and not (p[0] == upper[-1][0] and p[1] < upper[-1][1])):
-            upper.append(p)
 
-    upper = np.stack(upper)
+    # TODO: should make sure that, if there are two points with the same x-coordinate, the one with the higher y-coordinate is chosen
+    
 
-    S_upper = set(map(tuple, upper))
+    if maxx >= minx:
+        upper_hull = np.concatenate([vertices[:minx+1], vertices[maxx:]])
+        # upper_hull = vertices[minx:maxx]  # np.delete(vertices, np.s_[maxx:minx + 1], axis=0)
+    else:
+        upper_hull = vertices[maxx:minx + 1]
 
-    return S_upper
+    if len(upper_hull) == 0:
+        print(minx, maxx)
+
+    # Filter vertices to get only the upper hull
+    #upper_hull = []
+    #for i in range(len(vertices)):
+    #    if i == 0 or i == len(vertices) - 1 or vertices[i][1] > vertices[i-1][1]:
+    #        upper_hull.append(vertices[i])
+
+    return set(map(tuple, upper_hull))
 
 
 def count_transitions(points, P, N):
@@ -230,13 +222,16 @@ def plot_sawtooths(L, R):
 
 
 def generate_points_on_upper_hemisphere(num_points):
-    angles = np.linspace(0, np.pi/2, num_points, endpoint=True)
+    n = 2*num_points + 2
+    # angles = np.linspace(0, np.pi/2, num_points, endpoint=True)
+    angles = np.linspace(0, np.pi/2, n, endpoint=True)
+    # angles = np.random.uniform(0, np.pi/2, num_points)
     x = np.cos(angles)
-    y = np.sin(angles) - 0.5
+    y = np.sin(angles)
     points = np.vstack((x, y)).T
 
-    P = [{tuple(p) for p in points[0::2]}]
-    N = [{tuple(n) for n in points[1::2]}]
+    N = [{tuple(p) for p in points[0::2]}]
+    P = [{tuple(n) for n in points[1::2]}]
 
     return P, N
 
