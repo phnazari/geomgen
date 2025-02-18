@@ -148,29 +148,39 @@ def test(num_points=5):
 
     n = num_points
 
-    W = 1
-    b = 0.8  # lower_bound(num_points, n)   # upper_bound(num_points, n)
+    W = -1
+    b = 1 # upper_bound_2(num_points) - 0.0001  # lower_bound_2(num_points)
 
-    print(upper_bound(num_points, n))
-    print(lower_bound(num_points, n))
+    print(upper_bound_2(num_points))
+    print(lower_bound_2(num_points))
 
-    # multiply N by W
-    N = setmult(W, N[0])
-    # M = add_bias(setmult(W, P[0]), b)
-    M = add_bias(N, b)
-    O = setmult(W, P[0])
+    if W > 0 and False:
+        # multiply N by W
+        L = setmult(W, N[0])
+        M = add_bias(L, b)
+        O = setmult(W, P[0])
 
-    A = setsum(N, N)
-    B = setsum(M, O)
-    # B = setsum(add_bias(setmult(W, P[0]), b), N)
-    C = A.union(B)
+        A = setsum(L, L)
+        B = setsum(M, O)
+        # B = setsum(add_bias(setmult(W, P[0]), b), N)
+        C = A.union(B)
+    else:
+        L = setmult(W, P[0])
+        M = add_bias(L, b)
+        O = setmult(W, N[0])
+        # M = add_bias(O, b)
+
+        A = setsum(L, L)
+        B = setsum(M, O)
+        # B = setsum(M, L)
+        C = A.union(B)
 
     fig = plt.figure()
     plt.scatter(*zip(*A), alpha=.4, label='A', color='r')
     plt.scatter(*zip(*B), alpha=.4, label='B', color='g')    
 
-    for n in N:
-        plt.gca().add_patch(Arc(n, 2*W, 2*W, theta1=0, theta2=90, color='r'))
+    for l in L:
+        plt.gca().add_patch(Arc(l, 2*W, 2*W, theta1=0, theta2=90, color='r'))
 
     for m in M:
         plt.gca().add_patch(Arc(m, 2*W, 2*W, theta1=0, theta2=90, color='g'))
@@ -202,6 +212,19 @@ def upper_bound(n, i):
     Dn = np.sin(pihalf*(4*i+2)/norm)
     return -Cn/Dn
 
+def lower_bound_2(n):
+    norm = 2*n+1
+    pihalf = np.pi/2
+    Cn = np.sin(pihalf*(2*n)/norm) + np.cos(pihalf*(2*n)/norm) - 1
+    Dn = np.cos(pihalf*(2*n)/norm) - 1
+    return -Cn/Dn
+
+def upper_bound_2(n):
+    norm = 2*n+1
+    pihalf = np.pi/2
+    Cn = np.sin(pihalf*(1)/norm) + np.cos(pihalf*(1)/norm) - 1
+    Dn = np.cos(pihalf*(1)/norm)
+    return -Cn/Dn
 
 def half_circle_one_layer(R, plot=False, size=10):
     results_linregs = np.zeros(R)
