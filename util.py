@@ -1,6 +1,8 @@
 import os
 import numpy as np
 from matplotlib import pyplot as plt
+from scipy.spatial import ConvexHull, QhullError
+
 
 
 def upper_convex_hull(S):
@@ -11,7 +13,9 @@ def upper_convex_hull(S):
 
     return S_upper
 
-from scipy.spatial import ConvexHull
+
+def double_uch(P, N):
+    return upper_convex_hull(P), upper_convex_hull(N)
 
 
 def _upper_convex_hull(S):
@@ -25,10 +29,17 @@ def _upper_convex_hull(S):
 
     points = np.array(list(S))
 
-    if len(points) <= 1:
+    if len(points) <= 2:
         return S
 
-    hull = ConvexHull(points)
+
+    try:
+        hull = ConvexHull(points)
+        vertices = points[hull.vertices]
+    except QhullError as e:
+        print(f"QhullError: {e}")
+        return S
+    
     vertices = points[hull.vertices]
 
     # we have to filter for the one with max y value because at the boundary there could be two on top of each other
@@ -168,19 +179,28 @@ def plot_grid(data, benchmark, L, elements_per_row, name):
         row = l // elements_per_row
         col = l % elements_per_row
 
-        # Plot mean and std of linear regions
-        mean_linregs = np.mean(data[l, :, :], axis=0)
-        std_linregs = np.std(data[l, :, :], axis=0)
+        # Plot mean and interquartile range of linear regions
+        median_linregs = np.median(data[l, :, :], axis=0)
 
-        axs[row, col].plot(range(1, L+1), mean_linregs, label=f'Mean {name}')
-        axs[row, col].fill_between(range(1, L+1), mean_linregs - std_linregs, mean_linregs + std_linregs, alpha=0.2, label='Uncertainty')
+        axs[row, col].plot(range(1, L+1), median_linregs, label=f'Mean {name}')
         axs[row, col].plot(range(1, L+1), benchmark, color='r', linestyle='dashed', linewidth=2, label='Deterministic')
-        # axs[row, col].set_title(f'Linear Regions: {l} deterministic blocks, {s} random blocks')
+
+        step_size = 5
+        start = 30
+
+        for delta in range(step_size, start, step_size):
+            lower_percentile = np.percentile(data[l, :, :], start - delta, axis=0)
+            upper_percentile = np.percentile(data[l, :, :], 100 - start + delta, axis=0)
+            alpha = 0.1 + 0.3 * (start - delta) / start
+
+            axs[row, col].fill_between(range(1, L+1), lower_percentile, upper_percentile, alpha=alpha, color='crimson')
+
         if row == 0 and col == 0:
             axs[row, col].set_xlabel('Blocks')
             axs[row, col].set_ylabel(name)
+            axs[row, col].legend(loc='upper left')
+
         axs[row, col].set_yscale('log')
-        axs[row, col].legend()
 
     plt.tight_layout()
 
@@ -235,7 +255,6 @@ def generate_points_on_upper_hemisphere(num_points):
 
     return P, N
 
-
 def plot_function(P, N, name):
     x = np.linspace(-0.5, 1.5, 2000)
     y = np.array([Q(P, xi) for xi in x]) - np.array([Q(N, xi) for xi in x])
@@ -252,4 +271,12 @@ def Q(S, x):
     return max([s[0] * x + s[1] for s in S])
 
 
-
+def compute_percentile(q, x_vals, P):
+    cdf = np.cumsum(P)
+    if not 0 <= q <= 1:
+        raise ValueError("q must be between 0 and 1")
+    # Find the index where CDF >= q
+    idx = np.searchsorted(cdf, q, side='left')
+    # Ensure index is within bounds
+    idx = min(idx, len(x_vals) - 1)
+    return x_vals[idx]

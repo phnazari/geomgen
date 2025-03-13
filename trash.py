@@ -301,12 +301,12 @@ def half_circle(R, plot=False, size=10, L=1):
         for l in range(L):
             print(f"iteration r={r}, l={l}")
             P, N = generate_points_on_upper_hemisphere(size)
-            nn = RandNN(l+1, P=P, N=N)
+            nn = ReLuNet(l+1, P=P, N=N)
             nn.evaluate(all_layers=True)
             results_linregs[l, r, :l+1] = nn.linregs
 
     P, N = generate_points_on_upper_hemisphere(size)
-    nn_zero = RandNN(0, P=P, N=N)
+    nn_zero = ReLuNet(0, P=P, N=N)
     nn_zero.evaluate()
     linregs_zero = nn_zero.linregs
 
@@ -403,3 +403,18 @@ def half_circle(R, plot=False, size=10, L=1):
 
             #if not last_block:
             #    P_new, N_new = double_uch(P_new, N_new)
+
+
+        # test if my calculations are correct
+        if False:
+            N_new_test = add_bias(setsum(setmult(4, N[0]), setmult(2, N[0])), -2).union(setsum(setsum(setmult(4, N[0]), setmult(2, N[0]))), {(0,0)}).union(add_bias(setsum(setmult(4, P[0].symmetric_difference(N[0])), setmult(2, N[0])), -2))
+
+            P_new_test = setsum(setmult(4, N[0]), setmult(2, P[0])).union(setsum(setmult(4, N[0]), setsum(setmult(2, N[0]), {(0, 0)}))).union(N_new_test)
+
+            N_new_test = [N_new_test]
+            P_new_test = [P_new_test]
+
+            P_new_test, N_new_test = double_uch(P_new, N_new)
+
+            print(P_new[0] == P_new_test[0])
+            print(N_new[0] == N_new_test[0])

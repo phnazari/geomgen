@@ -2,9 +2,9 @@ import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.patches import Arc
 
-from util import count_transitions, generate_points_on_upper_hemisphere, plot_function, plot_grid, plot_points, upper_convex_hull
+from util import compute_percentile, count_transitions, generate_points_on_upper_hemisphere, plot_function, plot_grid, plot_points, upper_convex_hull
 from tropical import add_bias, iterate_points, setmult, setsum
-from nn import RandNN, SawtoothNetwork
+from nn import ReLuNet, SawtoothNetwork
 import os
 
 from scipy.stats import norm
@@ -12,149 +12,108 @@ from scipy.integrate import quad
 import math
 
 
-def det_rand_net(L, R, plot=False, all_layers=True, randomblocks=True):
+def det_rand_net(L, R, shift=False):
     results_transitions = np.zeros((L, R, L))
-    results_UCHp = np.zeros((L, R, L))
     results_linregs = np.zeros((L, R, L))
-    shift = True
 
     for r in range(R):
         for l in range(L):
             s = L - l
             print(f"iteration r={r}, l={l}, s={s}")
-            nn = SawtoothNetwork(l, s, shift=shift, randomblocks=randomblocks)
-            nn.evaluate(all_layers=all_layers)
-            results_transitions[l, r] = nn.transitions
-            results_transitions[l, r, :l] = 2**np.arange(1, l+1)
-            results_UCHp[l, r] = [len(uch) for uch in nn.UCH]
-            results_linregs[l, r] = nn.linregs
+            nn = SawtoothNetwork(l, s, shift=shift)
+            # nn.evaluate(all_layers=all_layers)
+            nn(all_layers=True)
 
-    print(f"iteration r={1}, l={L}, s={0}")
-    nn_det = SawtoothNetwork(L, 0, shift=shift, randomblocks=randomblocks)
-    nn_det.evaluate(all_layers=True)
+            results_transitions[l, r] = nn.transitions(all_layers=True)
+            results_transitions[l, r, :l] = 2**np.arange(1, l+1)
+            # results_UCHp[l, r] = [len(uch) for uch in nn.UCH]
+            results_linregs[l, r] = nn.linregs(all_layers=True)
+
+    # print(f"iteration r={1}, l={L}, s={0}")
+    nn_det = SawtoothNetwork(L, 0, shift=shift)
+    nn_det(all_layers=True)
+    # nn_det.evaluate(all_layers=True)
 
     return results_transitions, results_linregs, nn_det
 
 
-def sawtooth_plots(L, R, plot=False, randomblocks=True):
-    results_transitions, results_linregs, nn_det = det_rand_net(L, R, plot, randomblocks=randomblocks)
+def sawtooth_linregs(L, R):
+    _, results_linregs, nn_det = det_rand_net(L, R)
 
-    if plot:
-        elements_per_row = 3
-        fig = plot_grid(results_linregs, nn_det.linregs, L, elements_per_row, "Linear Regions")
-        output_dir = f"/home/philipp/Desktop/plots/{L}_{R}/linregs"
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-        fig.savefig(os.path.join(output_dir, f"combined_{L}_{R}.png"))
-
-        fig = plot_grid(results_transitions, np.array(2**np.arange(1, L+1)), L, elements_per_row, "Transitions")
-
-        output_dir = f"/home/philipp/Desktop/plots/{L}_{R}/trans"
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-        fig.savefig(os.path.join(output_dir, f"combined_{L}_{R}.png"))
-
-        plt.show()
-
-    # nn_det.plot()
-
-
-def sawtooth_histograms(L, R, plot=False):
-    results_transitions, results_linregs, nn_det = det_rand_net(L, R, plot, all_layers=True)
-
-    if plot:
-        elements_per_row = 3
-        fig, axes = plt.subplots(L // elements_per_row + L % elements_per_row, elements_per_row, figsize=(15, 5 * (L // elements_per_row + L % elements_per_row)))
-        fig.suptitle('Histograms of Linear Regions')
-
-        for l in range(L):
-            s = L - l
-            ax = axes[l // elements_per_row, l % elements_per_row]
-            ax.hist(results_linregs[l, :, -1], alpha=0.7, label=f'{l}, {s}')
-            ax.axvline(nn_det.linregs[-1], color='r', linestyle='dashed', linewidth=2, label='Deterministic')
-            ax.set_title(f'{l} deterministic blocks, {s} random blocks')
-            ax.set_xlabel('# Linear Regions')
-            ax.set_ylabel('Frequency')
-            ax.legend()
-
-        output_dir = f"/home/philipp/Desktop/plots/{L}_{R}/linregs"
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-        fig.savefig(os.path.join(output_dir, f"hist_combined_{L}_{R}.png"))
-
-        if plot:
-            plt.show()
-
-
-def rand_net(L, plot=False):
-    nn = RandNN(L)
-    nn.evaluate()
-
-    #print(f"Number of transitions: {nn.transitions}")
-    #print(f"Size of UCH: {len(nn.UCH)}")
-
-    if plot:
-        plot_points(nn.P, nn.N, L, np.array(list(nn.UCH)))
-
-
-def half_circle(R, plot=False, size=10, L=1):
-    results_linregs = np.zeros((R, L))
-
-    for r in range(R):
-        print(f"iteration r={r}")
-        P, N = generate_points_on_upper_hemisphere(size)
-        nn = RandNN(L, P=P, N=N)
-        nn.evaluate(all_layers=True)
-        results_linregs[r] = nn.linregs
-
-    P, N = generate_points_on_upper_hemisphere(size)
-    nn_zero = RandNN(0, P=P, N=N)
-    nn_zero.evaluate()
-    linregs_zero = nn_zero.linregs
-    
-    #linregs_mean = np.mean(results_linregs, axis=1)
-    #linregs_std = np.std(results_linregs, axis=1)
-
-    fig = plt.figure()
-
-    mean_linreg = np.mean(results_linregs, axis=0)
-    std_linreg = np.std(results_linregs, axis=0)
-    plt.plot(range(1, L+1), mean_linreg)
-    plt.fill_between(range(1, L+1), mean_linreg - std_linreg, mean_linreg + std_linreg, alpha=0.2, label='Uncertainty')
-    # plt.plot(range(1, L+1), linregs_zero, color='r', linestyle='dashed', linewidth=2, label='Deterministic')
-    plt.plot(range(1, L+1), linregs_zero*np.ones(L), color='r', linestyle='dashed', linewidth=2, label='Deterministic')
-    plt.title(f'Linear Regions')
-    plt.xlabel('Layer')
-    plt.ylabel('# Linear Regions')
-    # plt.yscale('log')
-    #plt.legend()
+    elements_per_row = 3
+    fig = plot_grid(results_linregs, nn_det.linregs(all_layers=True), L, elements_per_row, "#Linear Regions")
     output_dir = f"/home/philipp/Desktop/plots/{L}_{R}/linregs"
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    plt.savefig(os.path.join(output_dir, f"half_circle_{size}.png"))
-    if plot:
-        plt.show()
+    fig.savefig(os.path.join(output_dir, f"combined_{L}_{R}.png"))
+
+    plt.show()
 
 
-def test(num_points=5):
+def sawtooth_linregs_randlayer(L, R):
+    results_linregs = np.zeros((R, L-1))
+    shift = False
+
+    for r in range(R):
+        for l in range(L):
+            print(f"iteration l={l}")
+            nn = SawtoothNetwork(l, -1, shift=shift)
+            # nn.evaluate(all_layers=all_layers)
+            nn(all_layers=False)
+
+            results_linregs[r] = nn.linregs(all_layers=False)
+
+    # print(f"iteration r={1}, l={L}, s={0}")
+    nn_det = SawtoothNetwork(L-1, 0, shift=shift)
+    nn_det(all_layers=True)
+    # nn_det.evaluate(all_layers=True)
+
+    fig = plt.figure()
+    plt.plot(range(1, L), np.median(results_linregs, axis=0), label='Mean', color='blue')
+    # plt.plot(range(1, L), nn_det.linregs(all_layers=True), label='Deterministic', color='red', linestyle='--')
+    plt.fill_between(range(1, L), np.percentile(results_linregs, 25, axis=0), np.percentile(results_linregs, 75, axis=0), alpha=0.2, color='blue', label='Interquartile Range')
+    plt.xlabel('S')
+    plt.ylabel('n')
+    plt.legend()
+    plt.tight_layout()
+
+    plt.show()
+
+
+def sawtooth_transitions(L, R):
+    results_transitions, _, nn_det = det_rand_net(L, R, shift=True)
+
+    elements_per_row = 3
+    fig = plot_grid(results_transitions, np.array(2**np.arange(1, L+1)), L, elements_per_row, "Transitions")
+    output_dir = f"/home/philipp/Desktop/plots/{L}_{R}/trans"
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    fig.savefig(os.path.join(output_dir, f"combined_{L}_{R}.png"))
+
+    plt.show()
+
+def union_on_circle(num_points=5):
     P, N = generate_points_on_upper_hemisphere(num_points)
 
     S = setsum(P[0], N[0])
     uch = upper_convex_hull([S])[0]
-    print(len(uch))
 
-    W = - np.abs(np.random.randn(1)[0])
+    #fig = plt.figure()
+    #plt.scatter(*zip(*S), alpha=.4, label='P', color="red")
+    #plt.scatter(*zip(*uch), alpha=.4, label='UCH', color="blue")
+    #plt.axis("equal")
+    #for n in N[0]:
+    #    plt.gca().add_patch(Arc(n, 2, 2, theta1=0, theta2=90))
+
+    plt.show()
+
+    W = np.abs(np.random.randn(1)[0])
     b = np.random.randn(1)[0]
 
-    n = num_points
+    W = 1
+    b = 0.2 # upper_bound_2(num_points, 0) - 0.00001  # lower_bound_2(num_points)-0.05  # lower_bound(num_points, 2) + 0.005 # upper_bound_2(num_points) - 0.0001  # lower_bound_2(num_points)
 
-    W = -1
-    b = 1 # upper_bound_2(num_points) - 0.0001  # lower_bound_2(num_points)
-
-    print(upper_bound_2(num_points))
-    print(lower_bound_2(num_points))
-
-    if W > 0 and False:
+    if W > 0:
         # multiply N by W
         L = setmult(W, N[0])
         M = add_bias(L, b)
@@ -165,9 +124,9 @@ def test(num_points=5):
         # B = setsum(add_bias(setmult(W, P[0]), b), N)
         C = A.union(B)
     else:
-        L = setmult(W, P[0])
+        L = setmult(-W, P[0])
         M = add_bias(L, b)
-        O = setmult(W, N[0])
+        O = setmult(-W, N[0])
         # M = add_bias(O, b)
 
         A = setsum(L, L)
@@ -180,190 +139,225 @@ def test(num_points=5):
     plt.scatter(*zip(*B), alpha=.4, label='B', color='g')    
 
     for l in L:
-        plt.gca().add_patch(Arc(l, 2*W, 2*W, theta1=0, theta2=90, color='r'))
+        if W > 0:
+            plt.gca().add_patch(Arc(l, 2*W, 2*W, theta1=0, theta2=90, color='r'))
+        else:
+            plt.gca().add_patch(Arc(l, -2*W, -2*W, theta1=0, theta2=90, color='r'))
 
     for m in M:
-        plt.gca().add_patch(Arc(m, 2*W, 2*W, theta1=0, theta2=90, color='g'))
+        if W > 0:
+            plt.gca().add_patch(Arc(m, 2*W, 2*W, theta1=0, theta2=90, color='g'))
+        else:
+            plt.gca().add_patch(Arc(m, -2*W, -2*W, theta1=0, theta2=90, color='g'))
 
-    # plot a circle with radius 2W
-    # plt.gca().add_patch(Arc((0, b), 4*W, 4*W, theta1=0, theta2=90))
-    # plt.gca().add_patch(Arc((0, 0), 4*W, 4*W, theta1=0, theta2=90))
+
 
     # plot upper convex hull using circles around points
     uch = upper_convex_hull([C])[0]
     plt.gca().scatter(*zip(*uch), alpha=.4, label='UCH', color='b')
-    print(len(uch))
     plt.axis('equal')
     plt.legend()
     plt.show()
 
 
-def lower_bound(n, i):
+def upper_bound(n, i):
     norm = 2*(2*n+1)
     pihalf = np.pi/2
     Cn = 2*np.sin(pihalf*1/norm)**2
     Dn = np.sin(pihalf*(4*i)/norm)
     return Cn/Dn
 
-def upper_bound(n, i):
+def lower_bound(n, i):
     norm = 2*(2*n+1)
     pihalf = np.pi/2
     Cn = 2*np.sin(pihalf*1/norm)**2
-    Dn = np.sin(pihalf*(4*i+2)/norm)
+    Dn = np.sin(pihalf*(2*(2*i+1))/norm)
     return -Cn/Dn
 
-def lower_bound_2(n):
-    norm = 2*n+1
+def lower_bound_2(n, i):
+    norm = 2*(2*n+1)
     pihalf = np.pi/2
-    Cn = np.sin(pihalf*(2*n)/norm) + np.cos(pihalf*(2*n)/norm) - 1
-    Dn = np.cos(pihalf*(2*n)/norm) - 1
+    Cn = 2*np.sin(pihalf*1/norm)**2
+    Dn = np.sin(pihalf*(4*i)/norm)
     return -Cn/Dn
 
-def upper_bound_2(n):
-    norm = 2*n+1
+def upper_bound_2(n, i):
+    norm = 2*(2*n+1)
     pihalf = np.pi/2
-    Cn = np.sin(pihalf*(1)/norm) + np.cos(pihalf*(1)/norm) - 1
-    Dn = np.cos(pihalf*(1)/norm)
-    return -Cn/Dn
-
-def half_circle_one_layer(R, plot=False, size=10):
-    results_linregs = np.zeros(R)
-
-    for r in range(R):
-        print(f"iteration r={r}")
-        P, N = generate_points_on_upper_hemisphere(size)
-
-        summed_points = setsum(P[0], N[0])
-
-        uch = upper_convex_hull([summed_points])[0]
-        print(f"Number of vertices in UCH: {len(uch)}")
+    Cn = 2*np.sin(pihalf*1/norm)**2
+    Dn = np.sin(pihalf*(4*i + 2)/norm)
+    return Cn/Dn
 
 
-        nn = RandNN(1, P=P, N=N)
-        nn.evaluate(all_layers=False)
-        results_linregs[r] = nn.linregs
+def probability_of_increase(R, plot=False, Nmax=32):
+    n = 2
+    max = 15
+    sigma_values = np.linspace(1, 5, 9)
+    colors = plt.cm.viridis(np.linspace(0, 1, len(sigma_values)))
 
-        print(nn.layers[0].b)
+    results = np.zeros(Nmax)
 
-        fig = plt.figure()
-        plt.scatter(*zip(*nn.P[0]), alpha=.4, label='P')
-        plt.scatter(*zip(*nn.N[0]), alpha=.4, label='N')
-        plt.axis('equal')
-        plt.legend()
-        plt.show()
+    for n in range(2, Nmax):
+        for r in range(R):
+            P, N = generate_points_on_upper_hemisphere(n)
 
-        fig = plt.figure()
-        summed_points = setsum(nn.P[0], nn.N[0])
-        plt.scatter(*zip(*summed_points), alpha=.4, label='P + N')
+            nn = ReLuNet(1, P=P, N=N)
+            nn.evaluate(all_layers=False)
 
-        uch = upper_convex_hull([summed_points])[0]
-        print(f"Number of vertices in UCH: {len(uch)}")
+            if nn.linregs > 2*n+1:
+                results[n] += 1
 
-        plt.scatter(*zip(*uch), alpha=.4, label='UCH')
+    results /= R
 
-        plt.axis('equal')
-        plt.legend()
-        plt.show()
-
-    P, N = generate_points_on_upper_hemisphere(size)
-    nn_zero = RandNN(0, P=P, N=N)
-    nn_zero.evaluate()
-    linregs_zero = nn_zero.linregs
-
-    fig = plt.figure()
-
-    plt.hist(results_linregs, alpha=0.7, label='Random Layer')
-    plt.axvline(linregs_zero, color='r', linestyle='dashed', linewidth=2, label='Input Complexity')
-    plt.title('Distribution of Linear Regions')
-    plt.xlabel('# Linear Regions')
-    plt.ylabel('Frequency')
-    plt.legend()
-
-    # plt.yscale('log')
-    #plt.legend()
-    output_dir = f"/home/philipp/Desktop/plots/{1}_{R}/linregs"
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    plt.savefig(os.path.join(output_dir, f"half_circle_one_layer_{size}.png"))
-    if plot:
-        plt.show()
-
-
-def sawtooth_one_layer(R, L, plot=False):
-    results_linregs = np.zeros(R)
-
-    for r in range(R):
-        print(f"iteration r={r}")
-        nn = SawtoothNetwork(L, 1)
-        nn.evaluate(all_layers=False)
-        results_linregs[r] = nn.linregs
-
-    nn_zero = RandNN(L +1,0)
-    nn_zero.evaluate()
-    linregs_zero = nn_zero.linregs
-
-    fig = plt.figure()
-
-    plt.hist(results_linregs, alpha=0.7, label='Random Layer')
-    plt.axvline(linregs_zero, color='r', linestyle='dashed', linewidth=2, label='Input Complexity')
-    plt.title('Distribution of Linear Regions')
-    plt.xlabel('# Linear Regions')
-    plt.ylabel('Frequency')
-    plt.legend()
-
-    # plt.yscale('log')
-    #plt.legend()
-    output_dir = f"/home/philipp/Desktop/plots/{1}_{R}/linregs"
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    plt.savefig(os.path.join(output_dir, f"half_circle_one_layer_{size}.png"))
-    if plot:
-        plt.show()
-
-
-def sawtooth(L, R, plot=False):
-    results_linregs = np.zeros((R, L))
-    shift = True
-
-    for r in range(R):
-        print(f"iteration r={r}")
-        nn = SawtoothNetwork(L, 1, shift=shift)
-        nn.evaluate(all_layers=True)
-        results_linregs[r] = nn.linregs
-
-    nn_zero = SawtoothNetwork(L+1, 0)
-    nn_zero.evaluate()
-    linregs_zero = nn_zero.linregs
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(2, Nmax), results[2:], marker='o', linestyle='-', color='b', label='Empirical')
     
-    #linregs_mean = np.mean(results_linregs, axis=1)
-    #linregs_std = np.std(results_linregs, axis=1)
+    upper_bound_values = [1/2 + 1/(4*2*np.pi)*(np.arctan(np.abs(upper_bound(n, np.ceil(n/2))) + np.arctan(np.abs(lower_bound(n, np.ceil(n/2)-1))))) for n in range(2, Nmax)]
+    plt.plot(range(2, Nmax), upper_bound_values, linestyle='--', color='r', label='Theoretical')
 
-    fig = plt.figure()
+    plt.axhline(y=0.5, color='gray', linestyle='--', label='Y=0.5')
 
-    mean_linreg = np.mean(results_linregs, axis=0)
-    std_linreg = np.std(results_linregs, axis=0)
-    plt.plot(range(1, L+1), mean_linreg)
-    plt.fill_between(range(1, L+1), mean_linreg - std_linreg, mean_linreg + std_linreg, alpha=0.2, label='Uncertainty')
-    # plt.plot(range(1, L+1), linregs_zero, color='r', linestyle='dashed', linewidth=2, label='Deterministic')
-    plt.plot(range(1, L+1), linregs_zero*np.ones(L), color='r', linestyle='dashed', linewidth=2, label='Deterministic')
-    plt.title(f'Linear Regions')
-    plt.xlabel('Layer')
-    plt.ylabel('# Linear Regions')
-    # plt.yscale('log')
-    #plt.legend()
-    output_dir = f"/home/philipp/Desktop/plots/{L}_{R}/linregs"
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    plt.savefig(os.path.join(output_dir, f"half_circle_{size}.png"))
+    plt.xlabel('n', fontsize=14)
+    plt.ylabel(r'$\mathbb{P}(\uparrow)$', fontsize=14)
+    plt.ylim(0.25, 0.75)
+    plt.legend(fontsize=12)
+    plt.tight_layout()
+    if plot:
+        plt.show()
+    
+    return
+
+
+    plt.figure(figsize=(10, 6))
+
+    for sigma, color in zip(sigma_values, colors):
+        res = []
+        for n in range(2, max):
+            prob = 17/32 + 1/64*sigma*(lower_bound(n, np.ceil(n/2)-1)**2 + upper_bound(n, np.ceil(n/2))**2)
+            res.append(prob)
+
+            print((lower_bound(n, np.ceil(n/2)-1)**2 + upper_bound(n, np.ceil(n/2))**2))
+
+        plt.plot(range(2, max), res, color=color, linestyle='-', linewidth=2, marker='o', markersize=5, markerfacecolor=color, markeredgewidth=2, label=r'$\sigma_{w}^{2}=$' + str(sigma))
+
+    plt.xlabel('n', fontsize=14)
+    plt.ylabel(r'$\mathbb{P}(\uparrow)$', fontsize=14)
+    plt.legend(fontsize=12)
+    plt.tight_layout()
+    plt.show()
+
+
+def _as(n):
+    t = 3/(8*(2*n+1))
+    gamma = 0.577
+    return -1/2*n + 1 + t*np.log((4*(2*n+1))/np.pi) + t*gamma
+
+
+def sawtooth_one_layer(R, plot=False, Lmax=3):
+    results = np.zeros((R, Lmax-1))
+
+    det_results = np.zeros(Lmax)
+    det_points = []
+
+    for l in range(1, Lmax+1):
+        nn_sawtooth = SawtoothNetwork(l, 0, shift=True)
+        nn_sawtooth.evaluate(all_layers=False)
+        det_results[l-1] = (nn_sawtooth.linregs)
+
+        det_points.append((nn_sawtooth.P, nn_sawtooth.N))
+
+
+    for l in range(1, Lmax):
+        print(l, Lmax)
+
+        print("\n")
+        for r in range(R):
+            P, N = det_points[l-1]
+            nn = ReLuNet(1, P=P, N=N)
+            # nn = SawtoothNetwork(0, 1, shift=True)
+            nn.evaluate(all_layers=False)
+            
+            results[r, l-1] = nn.linregs - det_results[l]
+
+    mean_linreg = np.mean(results, axis=0)
+    percentiles = np.percentile(results, [25, 50, 75], axis=0)
+
+    plt.figure()
+    plt.plot(range(1, Lmax), mean_linreg, label='Gain (Mean)', color="Blue")
+    plt.plot(range(1, Lmax), percentiles[1], label='Median', color="Green")
+    plt.fill_between(range(1, Lmax), percentiles[0], percentiles[2], alpha=0.2, label='Interquartile Range', color="blue")
+    plt.plot(range(1, Lmax+1), det_results, label='Deterministic', color="Red", linestyle='--')
+    plt.xlabel('S')
+    plt.ylabel('n')
+    plt.legend()
+    plt.tight_layout()
+
+    #output_dir = f"/home/philipp/Desktop/plots/{1}_{R}/linregs"
+    #if not os.path.exists(output_dir):
+    #    os.makedirs(output_dir)
+    #plt.savefig(os.path.join(output_dir, f"half_circle_one_random_layer.png"))
     if plot:
         plt.show()
 
+def half_circle_one_random_layer(R, plot=False, Nmax=32):
+    results = np.zeros((R, Nmax))
+    results_2 = np.zeros((Nmax))
+    percentiles = np.zeros((Nmax, 2))
+    
 
-def theoretical_boundary_complexity(k):
-    n = 100
-    alpha = 50
-    beta = n - alpha
+    for n in range(2, Nmax):
+        for r in range(R):
+            P, N = generate_points_on_upper_hemisphere(n)
 
+            nn = ReLuNet(1, P=P, N=N)
+            nn.evaluate(all_layers=False)
+
+            results[r, n] = nn.linregs - (2*n+1)
+
+        s_values, P_s = compute_distribution(n)
+        expectation = sum(s * P for s, P in zip(s_values, P_s))
+        results_2[n] = expectation - (2*n+1)
+        percentiles[n, 0] = compute_percentile(0.25, s_values, P_s) - (2*n+1)
+        percentiles[n, 1] = compute_percentile(0.75, s_values, P_s) - (2*n+1)
+
+    mean_linreg = np.mean(results[:, 2:Nmax], axis=0)
+    # Compute different percentile bands
+    #q5_linreg, q95_linreg = np.percentile(results[:, 2:Nmax], [45, 55], axis=0)  # 5%-95%
+    #q15_linreg, q85_linreg = np.percentile(results[:, 2:Nmax], [15, 85], axis=0)  # 15%-85%
+    #q25_linreg, q75_linreg = np.percentile(results[:, 2:Nmax], [25, 75], axis=0)  # 25%-75%
+    #t1 = np.percentile(results[:, 2:Nmax], 45, axis=0, interpolation='nearest')
+    #t2 = np.percentile(results[:, 2:Nmax], 55, axis=0, interpolation='linear')
+
+
+    plt.figure()
+
+    # Plot the empirical mean
+    plt.plot(range(2, Nmax), mean_linreg, label='Empirical Mean', color='blue')
+
+    # Fill multiple percentile bands with increasing transparency
+    # plt.fill_between(range(2, Nmax), t1, t2, alpha=0.1, color='blue', label='5%-95%')   # Widest
+    #plt.fill_between(range(2, Nmax), q15_linreg, q85_linreg, alpha=0.2, color='blue', label='15%-85%')  # Medium
+    #plt.fill_between(range(2, Nmax), q25_linreg, q75_linreg, alpha=0.3, color='blue', label='25%-75%')  # Narrowest
+
+    # plot approximation
+    plt.plot(range(2, Nmax), _as(np.arange(2, Nmax)), label='Approx', linestyle='--', color='red')
+
+    # plot computations
+    plt.plot(range(2, Nmax), results_2[2:], label='Sum', color='green', linestyle=':', marker='o', markersize=4)
+    # plt.fill_between(range(2, Nmax), percentiles[2:, 0], percentiles[2:, 1], alpha=0.2, color='green', label='Interquartile Range')
+
+    plt.xlabel('n')
+    plt.ylabel("S-(2n+1)")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+    #output_dir = f"/home/philipp/Desktop/plots/{1}_{R}/linregs"
+    #if not os.path.exists(output_dir):
+    #    os.makedirs(output_dir)
+    #plt.savefig(os.path.join(output_dir, f"half_circle_one_random_layer.png"))
+    if plot:
+        plt.show()
 
 def _Pn12(n):
     # Define the integrand
@@ -436,4 +430,106 @@ def expected_good_edges(n, a):
     integral = _Pn12(n)
     print(prefactor, integral)
     return prefactor * integral
+    return 4*np.sin(np.pi/2*(1/(2*(2*n+1))))**4*((2*n+1)**2-1)/3
 
+    
+
+############################# Circle Density #############################
+
+
+# Define the base functions
+def l(i, n):
+    numerator = 2 * np.sin(np.pi / (4 * (2 * n + 1)))**2
+    denominator = np.sin(np.pi * (2 * i + 1) / (4 * n + 2))
+    return -numerator / denominator
+
+def u(i, n):
+    numerator = 2 * np.sin(np.pi / (4 * (2 * n + 1)))**2
+    denominator = np.sin(np.pi * i / (2 * n + 1))
+    return numerator / denominator
+
+# Function to compute P(S = s)
+def compute_P(s, n, atan_l_values, atan_u_values, delta_l_values, delta_u_values):
+    if s == n + 2:
+        return (1/4) * (2 - (2 / np.pi) * (atan_l_values[0] + atan_u_values[0]))
+    
+    elif s == 2 * n + 2:
+        if n % 2 == 0:
+            m = n // 2
+            return (1/4) * (2 - (2 / np.pi) * (atan_u_values[0] + atan_l_values[0] - 
+                                                delta_l_values[m - 1] - delta_u_values[m - 1]))
+        else:
+            return (1/4) * (2 - (2 / np.pi) * (atan_u_values[0] + atan_l_values[0]))
+    
+    elif s == 3 * n + 2:
+        return (1/4) * (2 / np.pi) * (2 * atan_u_values[n - 1] + 2 * atan_l_values[n - 1])
+    
+    else:
+        i = s - (n + 2)
+        if 0 < i < n and i % 2 == 0:
+            m = i // 2
+            return (1/4) * (2 / np.pi) * (delta_l_values[m - 1] + delta_u_values[m - 1])
+        
+        elif n < i < 2 * n:
+            if i % 2 == 0:
+                m = i // 2
+                return (1/4) * (2 / np.pi) * (delta_u_values[i - n - 1] + delta_l_values[m - 1] + 
+                                              delta_u_values[m - 1] + delta_l_values[i - n - 1])
+            else:
+                return (1/4) * (2 / np.pi) * (delta_u_values[i - n - 1] + delta_l_values[i - n - 1])
+        
+        return 0  # Should not occur for s in s_values
+
+
+def compute_distribution(n):
+    # Set the parameter n
+
+    # Compute l(i, n) and u(i, n)
+    l_values = [l(k, n) for k in range(n)]          # i = 0 to n-1
+    u_values = [u(k, n) for k in range(1, n + 1)]   # i = 1 to n
+
+    # Compute arctangents
+    atan_l_values = [np.arctan(np.abs(l_k)) for l_k in l_values]
+    atan_u_values = [np.arctan(np.abs(u_k)) for u_k in u_values]
+
+    # Compute delta values
+    delta_l_values = [atan_l_values[k] - atan_l_values[k + 1] for k in range(n - 1)]  # k = 0 to n-2
+    delta_u_values = [atan_u_values[k] - atan_u_values[k + 1] for k in range(n - 1)]  # k = 0 to n-2, for Delta u_1 to u_{n-1}
+
+    # Generate support (s values)
+    s_values = ([n + 2] + 
+                [n + 2 + i for i in range(2, n, 2)] + 
+                [2 * n + 2] + 
+                [n + 2 + i for i in range(n + 1, 2 * n)] + 
+                [3 * n + 2])
+
+    # Compute probabilities
+    P_s = [compute_P(s, n, atan_l_values, atan_u_values, delta_l_values, delta_u_values) 
+        for s in s_values]
+
+    return s_values, P_s
+
+
+def circle_distribution(n):
+    s_values, P_s = compute_distribution(n)
+
+    # Compute the expectation
+    expectation = sum(s * P for s, P in zip(s_values, P_s))
+
+    print(f"Expectation: {expectation:.10f}")
+    print(f"starting complexity: {2*n+1}")
+    print(f"marginal gain: {expectation - (2*n+1)}")
+
+    # Verify the sum (should be close to 1)
+    print(f"Sum of probabilities: {sum(P_s):.10f}")
+
+    # Plot the distribution
+    plt.figure(figsize=(10, 6))
+    plt.stem(s_values, P_s, basefmt=" ", use_line_collection=True, linefmt='navy', markerfmt='navy')
+    plt.axvline(x=2*n+1, color='crimson', linestyle='--', label=f's=2n+1')
+    plt.xlabel('s', fontsize=14)
+    plt.ylabel(r'$\mathbb{P}(S = s)$', fontsize=14)
+    plt.legend(fontsize=12)
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
