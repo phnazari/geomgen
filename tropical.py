@@ -2,7 +2,8 @@ import numpy as np
 
 
 def scalar_multiply_set(scalar, S):
-    return {(scalar * element[0], scalar * element[1]) for element in S}
+    return {tuple(scalar * element[i] for i in range(len(element))) for element in S}
+    # return {(scalar * element[0], scalar * element[1]) for element in S}
 
 
 def setsum(*sets):
@@ -17,7 +18,8 @@ def setsum(*sets):
         new_result = set()
         for b in s:
             for a in result:
-                new_result.add((a[0] + b[0], a[1] + b[1]))
+                # new_result.add((a[0] + b[0], a[1] + b[1]))
+                new_result.add(tuple(a[i] + b[i] for i in range(len(a))))
         result = new_result
 
     return result
@@ -41,11 +43,13 @@ def matrixproduct(A, S):
 
 
 def add_bias(S, b):
-    return {(s[0], s[1] + b) for s in S}
+    #     return {(s[0], s[1] + b) for s in S}
+    return {tuple(s[i] + (b if i == len(s) - 1 else 0) for i in range(len(s))) for s in S}
 
 
 def setmult(b, S):
-    return {(s[0]*b, s[1] * b) for s in S}
+    # return {(s[0]*b, s[1] * b) for s in S}
+    return {tuple(s[i] * b for i in range(len(s))) for s in S}
 
 
 def iterate_points(P, N, W, b, t):

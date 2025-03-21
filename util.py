@@ -271,6 +271,38 @@ def Q(S, x):
     return max([s[0] * x + s[1] for s in S])
 
 
+def dual_function(P, N, x):
+    return Q(P, x) - Q(N, x)
+
+
+def compute_upper_simplices(points):
+    """
+    Computes the upper convex hull of a set of points in R^3.
+
+    Parameters:
+        points (np.ndarray): An array of shape (n_points, 3) representing the input points.
+
+    Returns:
+        upper_facets (np.ndarray): An array of indices into the input points,
+                                where each row represents a facet (triangle) of the upper convex hull.
+    """
+    points = np.array(list(points))
+    # Compute the full convex hull.
+    hull = ConvexHull(points)
+    
+    # The equations for the hull facets have the form:
+    #     a*x + b*y + c*z + d = 0
+    # where the normal vector is (a, b, c). By convention in scipy.spatial.ConvexHull,
+    # the interior of the hull lies on the negative side of the hyperplane.
+    # For the upper convex hull (visible from +z), we select facets where the z-component of the normal is positive.
+    upper_facets = []
+    for eq, simplex in zip(hull.equations, hull.simplices):
+        # eq[2] is the z-component of the facet's outward normal.
+        if eq[2] > 0:
+            upper_facets.append(simplex)
+    
+    return np.array(upper_facets)
+
 def compute_percentile(q, x_vals, P):
     cdf = np.cumsum(P)
     if not 0 <= q <= 1:

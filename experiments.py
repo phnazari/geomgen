@@ -2,13 +2,14 @@ import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.patches import Arc
 
-from util import compute_percentile, count_transitions, generate_points_on_upper_hemisphere, plot_function, plot_grid, plot_points, upper_convex_hull
+from util import compute_percentile, compute_upper_simplices, count_transitions, generate_points_on_upper_hemisphere, plot_function, plot_grid, plot_points, upper_convex_hull
 from tropical import add_bias, iterate_points, setmult, setsum
-from nn import ReLuNet, SawtoothNetwork
+from nn import Layer, ReLuNet, SawtoothNetwork
 import os
 
 from scipy.stats import norm
 from scipy.integrate import quad
+from scipy.spatial import ConvexHull
 import math
 
 
@@ -111,7 +112,7 @@ def union_on_circle(num_points=5):
     b = np.random.randn(1)[0]
 
     W = 1
-    b = 0.2 # upper_bound_2(num_points, 0) - 0.00001  # lower_bound_2(num_points)-0.05  # lower_bound(num_points, 2) + 0.005 # upper_bound_2(num_points) - 0.0001  # lower_bound_2(num_points)
+    b = 0 # upper_bound_2(num_points, 0) - 0.00001  # lower_bound_2(num_points)-0.05  # lower_bound(num_points, 2) + 0.005 # upper_bound_2(num_points) - 0.0001  # lower_bound_2(num_points)
 
     if W > 0:
         # multiply N by W
@@ -433,6 +434,213 @@ def expected_good_edges(n, a):
     return 4*np.sin(np.pi/2*(1/(2*(2*n+1))))**4*((2*n+1)**2-1)/3
 
     
+############################# Example Function #############################
+
+def plot_affine_regions(db=False):
+    """Plot the affine regions of the function defined by the dual representation"""
+    # Create a grid of points
+    border = 3
+    numpoints = 500
+    x = np.linspace(-border, border, numpoints)
+    y = np.linspace(-border, border, numpoints)
+    X, Y = np.meshgrid(x, y)
+    
+    # Get dual representation
+    P, N = compute_dual_representation()
+    
+    # For each point, compute which affine piece is active by checking which
+    # tropical polynomials are maximal
+    regions = np.zeros_like(X)
+    for i in range(len(x)):
+        for j in range(len(y)):
+            point = np.array([X[i,j], Y[i,j]])
+            
+            # Find max index for P set
+            max_val_p = float('-inf')
+            max_idx_p = 0
+            for idx, p in enumerate(P[0]):
+                val_p = point[0]*p[0] + point[1]*p[1] + p[2]
+                if val_p > max_val_p:
+                    max_val_p = val_p
+                    max_idx_p = idx
+                    
+            # Find max index for N set
+            max_val_n = float('-inf') 
+            max_idx_n = 0
+            for idx, n in enumerate(N[0]):
+                val_n = point[0]*n[0] + point[1]*n[1] + n[2]
+                if val_n > max_val_n:
+                    max_val_n = val_n
+                    max_idx_n = idx
+                    
+            # Encode both indices and which value was larger into regions array
+            # Use positive values when P is larger, negative when N is larger
+            if not db:
+                regions[i,j] = max_idx_p * len(N[0]) + max_idx_n + 1
+            else:
+                if max_val_p >= max_val_n:
+                    regions[i,j] = 1
+                else:
+                    regions[i,j] = -1
+
+            #if max_val_p >= max_val_n:
+            #    regions[i,j] = max_idx_p * len(N[0]) + max_idx_n + 1
+            #else:
+            #    regions[i,j] = -(max_idx_p * len(N[0]) + max_idx_n + 1)
+
+    # Plot the regions
+    plt.figure(figsize=(10,10))
+    if db:
+        plt.imshow(regions, extent=[x[0], x[-1], y[0], y[-1]], origin='lower', cmap='RdBu')
+    else:
+        plt.imshow(regions, extent=[x[0], x[-1], y[0], y[-1]], origin='lower', cmap='tab20')
+    # plt.colorbar(label='Region Index')
+    #plt.xlabel('x')
+    #plt.ylabel('y')
+    #plt.title('Affine Regions of Dual Function')
+    plt.show()
+
+
+def compute_dual_representation():
+    """Computes the dual representation by applying three layers of transformations"""
+    P = [{(1, 0, 0)}, {(0, 1, 0)}]
+    N = [set()]
+
+    W1 = np.array([[-1, -1], [1, -2]])
+    b1 = np.array([1, -1])
+
+    W2 = np.array([[-1, 2], [2, -1]])
+    b2 = np.array([1, 2])
+
+    W3 = np.array([[3, -1]])
+    b3 = np.array([2])
+
+    layer1 = Layer(input_dim=2, output_dim=2, reduce=False, W=W1, b=b1)
+    layer2 = Layer(input_dim=2, output_dim=2, reduce=False, W=W2, b=b2)
+    layer3 = Layer(input_dim=2, output_dim=1, reduce=False, W=W3, b=b3, lin=True)
+
+    P, N = layer1(P, N)
+    P, N = layer2(P, N)
+    P, N = layer3(P, N)
+
+    return P, N
+
+
+def example_function_dualrep():
+    P, N = compute_dual_representation()
+    
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Define plotting parameters for P and N sets
+    plot_params = [
+        {'points': P, 'color': 'blue', 'marker': 'o'},
+        {'points': N, 'color': 'red', 'marker': 'x'}
+    ]
+
+    # Plot points and hulls for both sets
+    for params in plot_params:
+        # Plot points
+        for point_set in params['points']:
+            for point in point_set:
+                ax.scatter(point[0], point[1], point[2], 
+                          c=params['color'], marker=params['marker'])
+
+        # Compute and plot upper hulls
+        upper_hulls = [compute_upper_simplices(point_set) for point_set in params['points']]
+        for hull_points, point_set in zip(upper_hulls, params['points']):
+            for simplex in hull_points:
+                triangle = np.array([list(point_set)[vertex] for vertex in simplex])
+                ax.plot_trisurf(triangle[:, 0], triangle[:, 1], triangle[:, 2],
+                              color=params['color'], alpha=0.5)
+
+    ax.set_xlabel('X Label')
+    ax.set_ylabel('Y Label')
+    ax.set_zlabel('Z Label')
+
+    plt.show(block=True)  # Display the plot and block execution
+
+def plot_union_dualrep():
+    P, N = compute_dual_representation()
+    
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Define plotting parameters for P and N sets
+    plot_params = [
+        {'points': P, 'color': 'blue', 'marker': 'o'},
+        {'points': N, 'color': 'red', 'marker': 'x'}
+    ]
+
+    # Plot points and hulls for both sets
+    for params in plot_params:
+        # Plot points
+        for point_set in params['points']:
+            for point in point_set:
+                ax.scatter(point[0], point[1], point[2], 
+                          c=params['color'], marker=params['marker'])
+
+    # Compute and plot upper hull
+    S = P[0].union(N[0])
+    print(S)
+    upper_hulls = compute_upper_simplices(S)
+    # Count vertices in the upper convex hull
+    vertices = set()
+    for simplex in upper_hulls:
+        vertices.update(list(S)[i] for i in simplex)
+
+    print(vertices)
+
+    # Plot upper hull triangles
+    for simplex in upper_hulls:
+        triangle = np.array([list(S)[vertex] for vertex in simplex])
+        ax.plot_trisurf(triangle[:, 0], triangle[:, 1], triangle[:, 2],
+                      color='blue', alpha=0.5)
+
+
+    ax.set_xlabel('X Label')
+    ax.set_ylabel('Y Label')
+    ax.set_zlabel('Z Label')
+
+    plt.show(block=True)  # Display the plot and block execution
+
+
+
+def plot_setsum_dualrep():
+    P, N = compute_dual_representation()
+    
+    # Compute setsum and upper convex hull
+    S = setsum(P[0], N[0])
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Plot points from setsum
+    for point in S:
+        ax.scatter(point[0], point[1], point[2], c='blue', marker='o')
+
+    # Compute and plot upper hull
+    upper_hulls = compute_upper_simplices(S)
+    # Count vertices in the upper convex hull
+    vertices = set()
+    for simplex in upper_hulls:
+        vertices.update(simplex)
+    num_vertices = len(vertices)
+    print(S)
+    print(vertices)
+    print(f"Number of vertices in upper convex hull: {num_vertices}")
+    for simplex in upper_hulls:
+        triangle = np.array([list(S)[vertex] for vertex in simplex])
+        ax.plot_trisurf(triangle[:, 0], triangle[:, 1], triangle[:, 2],
+                      color='blue', alpha=0.5)
+
+    ax.set_xlabel('X Label')
+    ax.set_ylabel('Y Label')
+    ax.set_zlabel('Z Label')
+
+    plt.show(block=True)  # Display the plot and block execution
 
 ############################# Circle Density #############################
 
