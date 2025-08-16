@@ -1,10 +1,6 @@
 # The Geometry of Generalization
 
-This project is part of a master thesis at ETH Zurich, conducted in the lab of Prof. Bölcskei. The thesis explores the geometry of generalization in neural networks.
-
-## Thesis
-
-A link to the thesis will be provided here once it is uploaded.
+This project is part of my [Master's Thesis](https://phnazari.github.io/assets/pdf/Master_Thesis.pdf) at ETH Zurich, conducted in the lab of Prof. Bölcskei. The thesis explores the geometry of generalization in neural networks.
 
 ## Recreating Experiments
 
